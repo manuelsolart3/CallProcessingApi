@@ -1,18 +1,17 @@
 import os
 import pandas as pd
-from tkinter import Tk, filedialog, Label, Button, Entry, messagebox
-import zipfile
+from tkinter import Tk, filedialog, Label, Button, Entry, messagebox, Frame, StringVar
+from tkinter.ttk import Style
 from datetime import datetime
 
-# Función para validar y parsear la fecha en diferentes formatos
 def parse_date(date_str):
-    date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y%m%d'] 
+    date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y%m%d']
     for fmt in date_formats:
         try:
             return datetime.strptime(date_str, fmt).strftime('%Y-%m-%d')
         except ValueError:
             continue
-    return None 
+    return None
 
 def select_excel_file():
     global excel_file_path
@@ -21,7 +20,7 @@ def select_excel_file():
         filetypes=[("Archivos Excel", "*.xlsx *.xls")]
     )
     if excel_file_path:
-        label_excel_file.config(text=os.path.basename(excel_file_path))
+        excel_file_var.set(os.path.basename(excel_file_path))
 
 def select_zip_file():
     global zip_file_path
@@ -30,13 +29,13 @@ def select_zip_file():
         filetypes=[("Archivos ZIP", "*.zip")]
     )
     if zip_file_path:
-        label_zip_file.config(text=os.path.basename(zip_file_path))
+        zip_file_var.set(os.path.basename(zip_file_path))
 
 def select_output_folder():
     global output_folder_path
     output_folder_path = filedialog.askdirectory(title="Selecciona la carpeta de salida")
     if output_folder_path:
-        label_output_folder.config(text=os.path.basename(output_folder_path))
+        output_folder_var.set(os.path.basename(output_folder_path))
 
 def process_files():
     if not excel_file_path or not zip_file_path or not output_folder_path:
@@ -44,13 +43,11 @@ def process_files():
         return
     
     try:
-        # Verificar que la ruta de salida sea válida
         if not os.path.exists(output_folder_path) or not os.path.isdir(output_folder_path):
             messagebox.showerror("Error", "La ruta de salida no es válida")
             return
 
-        # Preguntar por la fecha
-        date_str = date_entry.get()  
+        date_str = date_entry.get()
         if date_str:
             folder_date = parse_date(date_str)
             if not folder_date:
@@ -59,92 +56,80 @@ def process_files():
         else:
             folder_date = datetime.now().strftime('%Y-%m-%d')
 
-        # Crear la carpeta con la fecha dentro de la ruta de salida
         output_folder = os.path.join(output_folder_path, folder_date)
         os.makedirs(output_folder, exist_ok=True)
 
-        # Leer el archivo Excel
         excel_data = pd.read_excel(excel_file_path)
         excel_data.columns = excel_data.columns.str.strip().str.lower()
 
-        # Verificar las columnas requeridas
         required_columns = ["agent", "customer id", "account name", "chat time"]
         if not all(column in excel_data.columns for column in required_columns):
             messagebox.showerror("Error", "El archivo Excel no contiene las columnas requeridas: 'Agent', 'Customer ID', 'Account Name', 'Chat Time'")
             return
 
-        # Leer el archivo ZIP y extraer archivos HTML
-        html_files = []
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            for file_info in zip_ref.infolist():
-                if file_info.filename.endswith('.html'):
-                    with zip_ref.open(file_info) as html_file:
-                        html_content = html_file.read()
-                        html_files.append(html_content)
+        processed_count = 0
+        zero_time_count = 0
 
-        # Variables para contar los archivos procesados y los que no se pudieron procesar
-        output_filenames = []
-        unprocessed_count = 0
-
-        # Generar y guardar los archivos de salida en la carpeta creada
         for index, row in excel_data.iterrows():
-            agent = row["agent"] if pd.notna(row["agent"]) else "None"
-            customer_id = row["customer id"] if pd.notna(row["customer id"]) else "None"
-            account_name = row["account name"] if pd.notna(row["account name"]) else "None"
-            chat_time = row["chat time"] if pd.notna(row["chat time"]) else "None"
+            agent = str(row["agent"]) if pd.notna(row["agent"]) else "[None]"
+            customer_id = str(row["customer id"]) if pd.notna(row["customer id"]) else "[None]"
+            account_name = str(row["account name"]) if pd.notna(row["account name"]) else "[None]"
+            chat_time = str(row["chat time"]) if pd.notna(row["chat time"]) else "[None]"
 
-            # Validación de 'Chat Time': Si es "00:00:00", no se procesa esa fila
-            if chat_time == "00:00:00" or chat_time == "None":
-                unprocessed_count += 1
-                continue  # No crear archivo para esta fila
+            if agent == "[None]" and customer_id == "[None]" and account_name == "[None]":
+                continue
 
-            # Generar el nombre del archivo
+            if chat_time == "00:00:00" or chat_time == "[None]":
+                zero_time_count += 1
+                continue
+
             output_filename = f"{agent}_{customer_id}_{account_name}.xlsx"
-            output_filenames.append(output_filename)
-
-            # Crear el archivo de salida
             output_filepath = os.path.join(output_folder, output_filename)
-            output_df = pd.DataFrame()  # Aquí puedes añadir los datos correspondientes a la lógica de tu proyecto
-            output_df.to_excel(output_filepath, index=False)
 
-        # Mostrar alerta con la cantidad de archivos no procesados
-        messagebox.showinfo("Éxito", f"Archivos generados correctamente.\nNo se pudieron procesar {unprocessed_count} archivos.")
+            output_df = pd.DataFrame({'Data': ['Processed data for this call would go here']})
+            output_df.to_excel(output_filepath, index=False)
+            processed_count += 1
+
+        message = f"Procesamiento completado.\n\n"
+        message += f"Archivos procesados: {processed_count}\n"
+        message += f"Archivos no procesado con Chat Time igual a 00:00:00 o nulo: {zero_time_count}"
         
-        print("Archivos de salida generados:")
-        for filename in output_filenames:
-            print(filename)
+        messagebox.showinfo("Éxito", message)
 
     except Exception as e:
         messagebox.showerror("Error", f"Hubo un problema procesando los archivos: {str(e)}")
 
-# Crear la interfaz gráfica usando Tkinter
+# GUI setup
 root = Tk()
-root.title("Carga de Archivos")
+root.title("Procesador de Archivos de Llamadas")
+root.geometry("500x400")  # Ajustar tamaño de la ventana
 
-label_excel_file = Label(root, text="Selecciona el archivo Excel")
-label_excel_file.pack()
+style = Style()
+style.theme_use('clam')
 
-btn_select_excel = Button(root, text="Seleccionar Excel", command=select_excel_file)
-btn_select_excel.pack()
+main_frame = Frame(root, padx=10, pady=10)  # Reducir márgenes
+main_frame.pack(fill='both', expand=True)
 
-label_zip_file = Label(root, text="Selecciona el archivo ZIP")
-label_zip_file.pack()
+excel_file_var = StringVar()
+zip_file_var = StringVar()
+output_folder_var = StringVar()
 
-btn_select_zip = Button(root, text="Seleccionar ZIP", command=select_zip_file)
-btn_select_zip.pack()
+Label(main_frame, text="Archivo Excel:").pack(anchor='w')
+Label(main_frame, textvariable=excel_file_var, width=22, relief="sunken", padx=2).pack(fill='x', pady=(0, 2))  # Reducir el ancho
+Button(main_frame, text="Seleccionar Excel", command=select_excel_file).pack(pady=(0, 2))  # Reducir el espacio entre botones
 
-label_output_folder = Label(root, text="Selecciona la carpeta de salida")
-label_output_folder.pack()
+Label(main_frame, text="Archivo ZIP:").pack(anchor='w')
+Label(main_frame, textvariable=zip_file_var, width=22, relief="sunken", padx=2).pack(fill='x', pady=(0, 2))
+Button(main_frame, text="Seleccionar ZIP", command=select_zip_file).pack(pady=(0, 2))
 
-btn_select_output_folder = Button(root, text="Seleccionar Carpeta", command=select_output_folder)
-btn_select_output_folder.pack()
+Label(main_frame, text="Carpeta de Salida:").pack(anchor='w')
+Label(main_frame, textvariable=output_folder_var, width=22, relief="sunken", padx=2).pack(fill='x', pady=(0, 2))
+Button(main_frame, text="Seleccionar Carpeta", command=select_output_folder).pack(pady=(0, 2))
 
-Label(root, text="Fecha (opcional, formato: YYYY-MM-DD)").pack()
+Label(main_frame, text="Fecha (opcional, formato: YYYY-MM-DD):").pack(anchor='w')
+date_entry = Entry(main_frame)
+date_entry.pack(fill='x', pady=(0, 2))
 
-date_entry = Entry(root)
-date_entry.pack()
-
-btn_process_files = Button(root, text="Procesar Archivos", command=process_files)
-btn_process_files.pack()
+Button(main_frame, text="Procesar Archivos", command=process_files, bg='#4CAF20', fg='white', padx=2, pady=3).pack(pady=10)  # Reducir padding
 
 root.mainloop()
